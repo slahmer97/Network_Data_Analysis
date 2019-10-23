@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os.path
 import time
+import PyGnuplot as pg
 
 data_set_dir_ = "/home/slahmer/PycharmProjects/Network_Data_Analysis/data_set/"
 
@@ -59,6 +60,8 @@ def get_end_to_end_time(df):
     return end - start
 
 
+
+
 def calc_global_data(data):
     print("Start !")
     print("Len ", len(data))
@@ -67,11 +70,11 @@ def calc_global_data(data):
     for i in range(1, 27):
         tmp = "N{}".format(i)
         nodes[tmp] = {}
-        nodes[tmp]["passed_by"] = 0
-        nodes[tmp]["processed_by"] = 0
-        nodes[tmp]["dropped_by"] = 0
-        nodes[tmp]["transmitted_by"] = 0
-        nodes[tmp]["queue_size"] = -1
+        nodes[tmp]["passed_by_me"] = 0
+        nodes[tmp]["processed_by_me"] = 0
+        nodes[tmp]["dropped_by_me"] = 0
+        nodes[tmp]["transmitted_by_me"] = 0
+        nodes[tmp]["queue_size"] = 0
         nodes[tmp]["curr_queue_size"] = 0
 
     total_send_packet = 0
@@ -83,19 +86,25 @@ def calc_global_data(data):
     for line in data:
         node = line[6]
         if line[1] == 0:  # départ de la source
-            nodes[node]["transmitted_by"] += 1
             total_send_packet += 1
+            nodes[node]["transmitted_by_me"] += 1
+            nodes[node]["processed_by_me"] += 1
         elif line[1] == 1:  # arrivée dans un nœud intermédiaire
             nodes[node]["curr_queue_size"] += 1
-            nodes[node]["queue_size"] = nodes[node]["curr_queue_size"]
+            a = nodes[node]["curr_queue_size"]
+            b = nodes[node]["queue_size"]
+            c = max(a, b)
+            nodes[node]["queue_size"] = c
+            # print("Curr : ", a, "-------old size : ", b, "------new size : ", c)
         elif line[1] == 2:  # départ d’une file d’attente
-            nodes[node]["processed_by"] += 1
+            nodes[node]["processed_by_me"] += 1  # TODO RE-check
+            # nodes[node]["curr_queue_size"] -= 1
         elif line[1] == 3:  # arrivée à destination
             total_arrived_packet += 1
         elif line[1] == 4:  # destruction d’un paquet (placement dans une file pleine)
             total_lost_packet += 1
-            nodes[node]["dropped_by"] += 1
-            nodes[node]["curr_queue_size"] -=1
+            nodes[node]["dropped_by_me"] += 1
+            nodes[node]["curr_queue_size"] -= 1
     end_time = time.time()
     print("End !")
     print("[+] Total number of sent packet : {}".format(total_send_packet))
@@ -131,3 +140,10 @@ calc_global_data(my_data_nu)
 #    print(end_to_end[i], "   ", means[i])
 
 # %%
+X = np.arange(10)
+Y = np.sin(X/(2*np.pi))
+Z = Y**2.0
+pg.s([X,Y,Z])
+pg.c('plot "tmp.dat" u 1:2 w lp')
+pg.c('replot "tmp.dat" u 1:3 w lp')
+pg.p('myfigure.ps')
