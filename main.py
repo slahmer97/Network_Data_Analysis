@@ -16,7 +16,7 @@ def preprocess_data(data_origin, dest_file):
     init_data = init_data.drop(columns=['tos', 'bif'])
     init_data.to_csv(dest_file, index=False)
     print("[+] New file contains {} entries".format(len(init_data)))
-    return init_data.to_numpy()
+    return init_data
 
 
 def init(data_set_dir):
@@ -29,9 +29,12 @@ def init(data_set_dir):
 
 
 my_data = init(data_set_dir_)
+# my_data_groupeby_sd = my_data.groupby(["s", "d"])
+
 my_data_nu = my_data.to_numpy()
 
 
+#print("Size of flux {}".format(my_data.groupby('fib').count()))
 # groupe by source,dest see time end-to-ennd
 # select where code == 4 groupeby pos average teaux de perte
 # ...
@@ -58,8 +61,6 @@ def get_end_to_end_time(df):
     if start < 0 or end < 0:
         return -1
     return end - start
-
-
 
 
 def calc_global_data(data):
@@ -106,18 +107,107 @@ def calc_global_data(data):
             nodes[node]["dropped_by_me"] += 1
             nodes[node]["curr_queue_size"] -= 1
     end_time = time.time()
-    print("End !")
-    print("[+] Total number of sent packet : {}".format(total_send_packet))
-    print("[+] Total number of lost packet : {}".format(total_lost_packet))
 
-    print("[+] Total number of arrived packet : {}".format(total_arrived_packet))
-    print("[+] Infos")
-    for n in nodes:
-        print(nodes[n])
     print("--- %s seconds ---" % (end_time - start_time))
+    save_glob_stats(nodes)
 
 
-calc_global_data(my_data_nu)
+def save_glob_stats(nodes):
+    ret = []
+    for node in nodes:
+        sub_ret = [node, nodes[node]["dropped_by_me"], nodes[node]["queue_size"]]
+        ret.append(sub_ret)
+    r = pd.DataFrame(ret)
+    r.to_csv("glob", sep=" ", index=False)
+
+
+def cal_std(group_data, mean):
+    return 1
+
+
+def cal_rtt_time(data):
+    print("Start !")
+    start_time = time.time()
+    packets = {}
+    means = {}
+    # time,code,pid,fid,s,d,pos
+    for line in data:
+        code = line[1]
+        pid = line[2]
+        time_ = line[0]
+        src = line[4]
+        dst = line[5]
+        packet_name = "{}".format(pid)
+
+        is_ = packet_name in packets
+        if code == 0:
+            if not is_:
+                packets[packet_name] = {}
+            packets[packet_name]["start"] = time_
+            continue
+        elif code == 3:
+            if not is_:
+                packets[packet_name] = {}
+            packets[packet_name]["end"] = time_
+        else:
+            continue
+        entry_f1 = "{}{}".format(src, dst)
+        entry_f2 = "{}{}".format(dst, src)
+
+        if "end" in packets[packet_name] and "start" in packets[packet_name]:
+            if entry_f1 in means:
+                Xi = float(packets[packet_name]["end"] - packets[packet_name]["start"])
+                means[entry_f1]["val"] += Xi
+                means[entry_f1]["vari"] += Xi ** 2
+                means[entry_f1]["count"] += 1
+                # print("Xi = {}\tXi^2 = {}".format(Xi,Xi**2))
+
+            elif entry_f2 in means:
+                Xi = float(packets[packet_name]["end"] - packets[packet_name]["start"])
+                means[entry_f2]["val"] += Xi
+                means[entry_f2]["vari"] += Xi ** 2
+                means[entry_f2]["count"] += 1
+            else:
+                Xi = float(packets[packet_name]["end"] - packets[packet_name]["start"])
+                means[entry_f1] = {}
+                means[entry_f1]["val"] = Xi
+                means[entry_f1]["vari"] = Xi ** 2
+                means[entry_f1]["count"] = 1
+    end_time = time.time()
+    print("--- %s seconds ---" % (end_time - start_time))
+    print("Count : {}".format(len(means)))
+    countAll = 0
+    meanAll = 0
+    Xi_All = 0 #square !
+    for end_to_end in means:
+        countAll += 1
+        count = float(means[end_to_end]["count"])
+        val = float(means[end_to_end]["val"])
+        X_bar = float(val / count)
+        meanAll += X_bar
+        Xi_All += float(X_bar)**2
+        means[end_to_end]["mean"] = X_bar
+        means[end_to_end]["vari"] = means[end_to_end]["vari"] - count * (X_bar ** 2)
+        means[end_to_end]["vari"] = float(means[end_to_end]["vari"]) / float(count - 1)
+        var = means[end_to_end]["vari"]
+        std = var ** (float(1) / float(2))
+        seg_DN = std / float(count)
+        print(" {} -----> Mean : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
+              format(end_to_end, X_bar, std - seg_DN, std + seg_DN))
+
+    meanAll = float(meanAll) / float(countAll)
+    varAll = (Xi_All - countAll*(meanAll**2)) / float(countAll-1)
+    segAll = varAll**(float(1) / float(2))
+    segAll_DN = segAll / float(countAll)
+    print(" [+]-----------> MeanAll : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
+      format(meanAll, segAll - segAll_DN, segAll + segAll_DN))
+
+
+
+# test(my_data_nu)
+cal_rtt_time(my_data_nu)
+
+# calc_global_data(my_data_nu)
 # means = []
 # end_to_end = []
 # for name, groupe in test:
@@ -138,12 +228,17 @@ calc_global_data(my_data_nu)
 # len_ = len(means)
 # for i in range(0, len_):
 #    print(end_to_end[i], "   ", means[i])
-
+# pg.c('plot "tmp.dat" using 1:2 w linespoint')
+# pg.c('plot "tmp.dat" using 1:2 w linespoint title "xyz"')
+# pg.c("set xlabel 'lala' ")
+# pg.c("set ylabel 'lili' ")
+#
+#
 # %%
-X = np.arange(10)
-Y = np.sin(X/(2*np.pi))
-Z = Y**2.0
-pg.s([X,Y,Z])
-pg.c('plot "tmp.dat" u 1:2 w lp')
-pg.c('replot "tmp.dat" u 1:3 w lp')
-pg.p('myfigure.ps')
+
+# W = np.arange(20, 30)
+# Z = Y ** 6.0
+# pg.s([X, Y])
+
+# pg.c('plot "tmp.dat" using 1:2 w linespoint title "xyz"')
+# pg.c("save 'plot test saving'")
