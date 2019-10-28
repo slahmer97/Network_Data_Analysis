@@ -4,6 +4,8 @@ import os.path
 import time
 import PyGnuplot as pg
 
+import matplotlib.pyplot as plt
+
 data_set_dir_ = "/home/slahmer/PycharmProjects/Network_Data_Analysis/data_set/"
 
 
@@ -29,25 +31,18 @@ def init(data_set_dir):
 
 
 my_data = init(data_set_dir_)
-# my_data_groupeby_sd = my_data.groupby(["s", "d"])
-
+fl = len(my_data.fid.unique())
+print("Flux count : {}".format(fl))
 my_data_nu = my_data.to_numpy()
 
+d_time = len(my_data.time.unique())
+print("Unique time : ", d_time)
 
-#print("Size of flux {}".format(my_data.groupby('fib').count()))
+
+# print("Size of flux {}".format(my_data.groupby('fib').count()))
 # groupe by source,dest see time end-to-ennd
 # select where code == 4 groupeby pos average teaux de perte
-# ...
 
-# %%
-# test = my_data.groupby(['s', 'd'])
-
-
-# 0 : départ de la source
-# 1 : arrivée dans un nœud intermédiaire 
-# 2 : départ d’une file d’attente
-# 3 : arrivée à destination
-# 4 : destruction d’un paquet (placement dans une file pleine)
 
 def get_end_to_end_time(df):
     start = -1
@@ -121,8 +116,21 @@ def save_glob_stats(nodes):
     r.to_csv("glob", sep=" ", index=False)
 
 
-def cal_std(group_data, mean):
-    return 1
+def plot_conf_int(bar, yerr, name):
+    # width of the bars
+    barWidth = 0.2
+
+    # The x position of bars
+    r1 = np.arange(len(bar))
+    r2 = [x + barWidth for x in r1]
+    # example data
+
+    ls = 'dotted'
+
+    plt.errorbar(bar, y=r1, xerr=0, yerr=yerr, ls=ls, color='blue')
+
+    plt.title('Errorbar upper and lower limits')
+    plt.show()
 
 
 def cal_rtt_time(data):
@@ -178,64 +186,165 @@ def cal_rtt_time(data):
     print("Count : {}".format(len(means)))
     countAll = 0
     meanAll = 0
-    Xi_All = 0 #square !
+    Xi_All = 0  # square !
+    bar = []
+    err = []
+    name = []
     for end_to_end in means:
+        name.append(end_to_end)
         countAll += 1
         count = float(means[end_to_end]["count"])
         val = float(means[end_to_end]["val"])
         X_bar = float(val / count)
         meanAll += X_bar
-        Xi_All += float(X_bar)**2
+        Xi_All += float(X_bar) ** 2
         means[end_to_end]["mean"] = X_bar
         means[end_to_end]["vari"] = means[end_to_end]["vari"] - count * (X_bar ** 2)
         means[end_to_end]["vari"] = float(means[end_to_end]["vari"]) / float(count - 1)
         var = means[end_to_end]["vari"]
         std = var ** (float(1) / float(2))
         seg_DN = std / float(count)
-        print(" {} -----> Mean : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
-              format(end_to_end, X_bar, std - seg_DN, std + seg_DN))
+        bar.append(X_bar)
+        err.append(seg_DN * 3)
+        # print(" {} -----> Mean : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
+        #      format(end_to_end, X_bar, std - 3*seg_DN, std + 3*seg_DN))
 
     meanAll = float(meanAll) / float(countAll)
-    varAll = (Xi_All - countAll*(meanAll**2)) / float(countAll-1)
-    segAll = varAll**(float(1) / float(2))
+    varAll = (Xi_All - countAll * (meanAll ** 2)) / float(countAll - 1)
+    segAll = varAll ** (float(1) / float(2))
     segAll_DN = segAll / float(countAll)
+    name.append("All")
+    bar.append(meanAll)
+    err.append(segAll_DN * 3)
     print(" [+]-----------> MeanAll : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
-      format(meanAll, segAll - segAll_DN, segAll + segAll_DN))
+          format(meanAll, segAll - 3 * segAll_DN, segAll + 3 * segAll_DN))
+    # plot_conf_int(bar, err, name)
+
+
+# cal_rtt_time(my_data_nu)
+
+def get_empty_node_info(node):
+    nodes_info = {}
+    n_pseudo = node
+    nodes_info[n_pseudo] = {}
+    nodes_info[n_pseudo]["current_queue_size"] = 0
+    nodes_info[n_pseudo]["loss_packet"] = 0
+    nodes_info[n_pseudo]["passed_by_me"] = 0
+    return nodes_info
+
+#  calculate general network stats :
+#  * number of packets that have been lost in each time
+#  * number of packets that have been injected in network
+#  * number of packets that are in network in each instance
+
+def cal_net_stats(data, file_name, disp=False):
+    res = []
+    print("start")
+    start_time = time.time()
+    counter = 0
+    # time,code,pid,fid,s,d,pos
+    last_index: int = -1
+    for line in data:
+        time_ = line[0]
+        code_ = line[1]
+        if 0 <= last_index < len(res) and 'time' in res[last_index] and res[last_index]['time'] == time_:
+            if code_ == 4:  # destruction d’un paquet (placement dans une file pleine)
+                res[last_index]["lost_packet"] += 1
+                res[last_index]["packets_in_network"] -= 1
+            elif code_ == 0:  # depart de source
+                res[last_index]["injected_packet"] += 1
+                res[last_index]["packets_in_network"] += 1
+            elif code_ == 3:  # arrivé au destination
+                res[last_index]["packets_in_network"] -= 1
+
+        else:
+            index = last_index + 1
+            res.append([])
+            res[index] = {}
+            res[index]["time"] = time_
+            if index >= 1:
+                res[index]["lost_packet"] = res[index - 1]["lost_packet"]
+                res[index]["injected_packet"] = res[index - 1]["injected_packet"]
+                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"]
+
+            else:
+                res[index]["lost_packet"] = 0
+                res[index]["injected_packet"] = 0
+                res[index]["packets_in_network"] = 0
+
+            if code_ == 4:  # destruction d’un paquet (placement dans une file pleine)
+                res[index]["lost_packet"] = res[index - 1]["lost_packet"] + 1
+                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] - 1
+            elif code_ == 0:  # depart du source
+                res[index]["injected_packet"] = res[index - 1]["injected_packet"] + 1
+                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] + 1
+            elif code_ == 3:  # arrivé au destination
+                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] - 1
+
+            last_index += 1
+    end_time = time.time()
+    print("--- %s seconds ---" % (end_time - start_time))
+    file = open(file_name, mode="w")
+    file.write("time,lost_p,inject_p,live_p\n")
+    for i in range(0, len(res)):
+        file.write("{},{},{},{}\n".format(res[i]["time"], res[i]["lost_packet"], res[i]["injected_packet"], res[i]["packets_in_network"]))
+        if disp:
+            print("[+] at time %2.8f -- dropped : %6d -- injected : %10d -- live : %6d" % (
+                res[i]["time"], res[i]["lost_packet"], res[i]["injected_packet"], res[i]["packets_in_network"]))
 
 
 
-# test(my_data_nu)
-cal_rtt_time(my_data_nu)
+def cal_node_stats(data, node):
+    # packets drop in each router
+    # packets drop in all network
+    # packets injected in network
+    # packets in network
+    res = []
+    print("start")
+    start_time = time.time()
+    counter = 0
+    # time,code,pid,fid,s,d,pos
+    last_index = -1
+    for line in data:
+        time_ = line[0]
+        code_ = line[1]
+        pos_ = line[6]
+        if 0 <= last_index < len(res) and 'time' in res[last_index] and res[last_index]['time'] == time_:
+            if code_ == 4 and pos_ == node:  # destruction d’un paquet (placement dans une file pleine)
+                res[last_index]["dropped_packet"] += 1
+        else:
+            index = last_index + 1
+            res.append([])
+            res[index] = {}
+            res[index]["time"] = time_
+            if index >= 1:
+                res[index]["dropped_packet"] = res[index - 1]["dropped_packet"]
+                res[index]["passed_by_me"] = res[index - 1]["passed_by_me"]
+                res[index]["sent_by_me"] = res[index - 1]["sent_by_me"]
+                res[index]["current_queue_size"] = res[index - 1]["current_queue_size"]
+            else:
+                res[index]["dropped_packet"] = 0
+                res[index]["passed_by_me"] = 0
+                res[index]["sent_by_me"] = 0
+                res[index]["current_queue_size"] = 0
 
-# calc_global_data(my_data_nu)
-# means = []
-# end_to_end = []
-# for name, groupe in test:
-#    mean_tmp = 0
-#    counter = 0
-#    data_groupe_by_pid = groupe.groupby("pid")
-#    for name2, groupe2 in data_groupe_by_pid:
-#        tmp = get_end_to_end_time(groupe2)
-#        if tmp >= 0:
-#            counter = counter + 1
-#            mean_tmp = mean_tmp + tmp
-# mu = mean_tmp / counter
-# means.append(mean_tmp / counter)
-# end_to_end.append(name)
-# print(name," ===> ",mu)
+            if code_ == 4 and pos_ == node:  # destruction d’un paquet (placement dans une file pleine)
+                res[index]["dropped_packet"] = res[index - 1]["dropped_packet"] + 1
+
+            last_index += 1
+    end_time = time.time()
+    print("--- %s seconds ---" % (end_time - start_time))
+
+    drop = -1
+    c = 100
+    for i in range(0, len(res)):
+        if res[i]["lost_packet"] != drop and c > 0:
+            print("[+] at time : {}\t\t\t- Packet drops : {}".format(res[i]["time"], res[i]["lost_packet"]))
+            drop = res[i]["lost_packet"]
+            c -= 1
 
 
-# len_ = len(means)
-# for i in range(0, len_):
-#    print(end_to_end[i], "   ", means[i])
-# pg.c('plot "tmp.dat" using 1:2 w linespoint')
-# pg.c('plot "tmp.dat" using 1:2 w linespoint title "xyz"')
-# pg.c("set xlabel 'lala' ")
-# pg.c("set ylabel 'lili' ")
-#
-#
-# %%
-
+cal_net_stats(my_data_nu, "new_stats", False)
 # W = np.arange(20, 30)
 # Z = Y ** 6.0
 # pg.s([X, Y])
