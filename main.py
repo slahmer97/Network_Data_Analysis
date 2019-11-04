@@ -31,12 +31,17 @@ def init(data_set_dir):
 
 
 my_data = init(data_set_dir_)
-fl = len(my_data.fid.unique())
-print("Flux count : {}".format(fl))
-my_data_nu = my_data.to_numpy()
 
-d_time = len(my_data.time.unique())
-print("Unique time : ", d_time)
+
+# fl = len(my_data.fid.unique())
+# print("Flux count : {}".format(fl))
+# exit(1)
+
+
+# my_data_nu = my_data.to_numpy()
+
+# d_time = len(my_data.time.unique())
+# print("Unique time : ", d_time)
 
 
 # print("Size of flux {}".format(my_data.groupby('fib').count()))
@@ -110,26 +115,24 @@ def calc_global_data(data):
 def save_glob_stats(nodes):
     ret = []
     for node in nodes:
-        sub_ret = [node, nodes[node]["dropped_by_me"], nodes[node]["queue_size"]]
+        sub_ret = [node, nodes[node]["dropped_by_me"], nodes[node]["queue_size"], nodes[node]["curr_queue_size"]]
         ret.append(sub_ret)
-    r = pd.DataFrame(ret)
-    r.to_csv("glob", sep=" ", index=False)
+    r = pd.DataFrame(ret, columns=["node", "drop", "queue_s", "curr_queue_s"])
+    r.to_csv("glob.csv", sep=",", index=False)
 
 
-def plot_conf_int(bar, yerr, name):
+def plot_pert_prop(file_name):
     # width of the bars
     barWidth = 0.2
-
-    # The x position of bars
-    r1 = np.arange(len(bar))
-    r2 = [x + barWidth for x in r1]
-    # example data
-
-    ls = 'dotted'
-
-    plt.errorbar(bar, y=r1, xerr=0, yerr=yerr, ls=ls, color='blue')
-
-    plt.title('Errorbar upper and lower limits')
+    tmp = pd.read_csv(file_name)
+    x = tmp.NODE.to_numpy()
+    proportion_de_pert = tmp.A.to_numpy() * 100
+    taux_de_perte = tmp.B.to_numpy() * 100
+    plt.bar(x, proportion_de_pert, label='proportion de perte', color='r')
+    # plt.bar(x,taux_de_perte,  label='taux de perte',color='c')
+    plt.xlabel('Node')
+    plt.ylabel('Loss percentage')
+    # plt.title('Exemple d\' histogramme simple')
     plt.show()
 
 
@@ -232,10 +235,6 @@ def get_empty_node_info(node):
     nodes_info[n_pseudo]["passed_by_me"] = 0
     return nodes_info
 
-#  calculate general network stats :
-#  * number of packets that have been lost in each time
-#  * number of packets that have been injected in network
-#  * number of packets that are in network in each instance
 
 def cal_net_stats(data, file_name, disp=False):
     res = []
@@ -273,28 +272,28 @@ def cal_net_stats(data, file_name, disp=False):
                 res[index]["packets_in_network"] = 0
 
             if code_ == 4:  # destruction d’un paquet (placement dans une file pleine)
-                res[index]["lost_packet"] = res[index - 1]["lost_packet"] + 1
-                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] - 1
+                res[index]["lost_packet"] += 1
+                res[index]["packets_in_network"] -= 1
             elif code_ == 0:  # depart du source
-                res[index]["injected_packet"] = res[index - 1]["injected_packet"] + 1
-                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] + 1
+                res[index]["injected_packet"] += 1
+                res[index]["packets_in_network"] += 1
             elif code_ == 3:  # arrivé au destination
-                res[index]["packets_in_network"] = res[index - 1]["packets_in_network"] - 1
+                res[index]["packets_in_network"] -= 1
 
             last_index += 1
     end_time = time.time()
     print("--- %s seconds ---" % (end_time - start_time))
-    file = open(file_name, mode="w")
+    file = open("{}.csv".format(file_name), mode="w")
     file.write("time,lost_p,inject_p,live_p\n")
     for i in range(0, len(res)):
-        file.write("{},{},{},{}\n".format(res[i]["time"], res[i]["lost_packet"], res[i]["injected_packet"], res[i]["packets_in_network"]))
+        file.write("{},{},{},{}\n".format(res[i]["time"], res[i]["lost_packet"], res[i]["injected_packet"],
+                                          res[i]["packets_in_network"]))
         if disp:
             print("[+] at time %2.8f -- dropped : %6d -- injected : %10d -- live : %6d" % (
                 res[i]["time"], res[i]["lost_packet"], res[i]["injected_packet"], res[i]["packets_in_network"]))
 
 
-
-def cal_node_stats(data, node):
+def cal_node_stats(data, node, disp=False):
     # packets drop in each router
     # packets drop in all network
     # packets injected in network
@@ -328,23 +327,117 @@ def cal_node_stats(data, node):
                 res[index]["sent_by_me"] = 0
                 res[index]["current_queue_size"] = 0
 
-            if code_ == 4 and pos_ == node:  # destruction d’un paquet (placement dans une file pleine)
-                res[index]["dropped_packet"] = res[index - 1]["dropped_packet"] + 1
+            if pos_ == node:
+                if code_ == 4:  # destruction d’un paquet (placement dans une file pleine)
+                    res[index]["dropped_packet"] += 1
+                    res[index]["current_queue_size"] -= 1
+                elif code_ == 0:  # départ de la source
+                    res[index]["sent_by_me"] += 1
+                    res[index]["passed_by_me"] += 1
+                elif code_ == 1:  # arrivée dans un nœud intermédiai
+                    res[index]["current_queue_size"] += 1
+                elif code_ == 2:  # départ d’une file d’attent
+                    res[index]["passed_by_me"] += 1
+                    # res[index]["current_queue_size"] -= 1
 
             last_index += 1
     end_time = time.time()
     print("--- %s seconds ---" % (end_time - start_time))
 
-    drop = -1
-    c = 100
-    for i in range(0, len(res)):
-        if res[i]["lost_packet"] != drop and c > 0:
-            print("[+] at time : {}\t\t\t- Packet drops : {}".format(res[i]["time"], res[i]["lost_packet"]))
-            drop = res[i]["lost_packet"]
-            c -= 1
+    file = open("{}.csv".format(node), mode="w")
+    file.write("time,sent,passed,queue,dropped\n")
+    for index in range(0, len(res)):
+        file.write("{},{},{},{},{}\n".format(res[index]["time"], res[index]["sent_by_me"], res[index]["passed_by_me"],
+                                             res[index]["current_queue_size"], res[index]["dropped_packet"]))
+        if disp == True:
+            print("[+] time : %2.6f -- send : %8d  -- passed : %8d  -- queue : %8d  -- dropped : %8d" % (
+                res[index]["time"], res[index]["sent_by_me"], res[index]["passed_by_me"],
+                res[index]["current_queue_size"],
+                res[index]["dropped_packet"]))
+    file.close()
 
 
-cal_net_stats(my_data_nu, "new_stats", False)
+def flux__(data_n):
+    grp = data_n.groupby(["fid"])
+    f_list = {}
+    for name, group in grp:
+        f_list[name] = {}
+        f_list[name]["start"] = group["time"].min()
+        f_list[name]["end"] = group["time"].max()
+        f_list[name]["p_count"] = len(group["pid"].unique())
+        # print("Name : %s  -- start at : %2.8f  -- end at : %2.8f -- p_count : %8d "%(name, f_list[name]["start"],
+        # f_list[name]["end"], f_list[name]["p_count"]))
+
+    print("\n\n\n")
+    act_f_l = []
+    file = open("act_flux.csv", mode="w")
+    file.write("time,f_count\n")
+    for i in np.arange(0, 19, 0.001):
+        act_f = {}
+        act_f["time"] = i
+        act_f["f_count"] = 0
+        for f in f_list:
+            if float(f_list[f]["start"]) <= float(i) <= float(f_list[f]["end"]):
+                act_f["f_count"] += 1
+        print("time : %2.4f  -- F_count : %4d " % (act_f["time"], act_f["f_count"]))
+        file.write("{},{}\n".format(act_f["time"], act_f["f_count"]))
+        act_f_l.append(act_f)
+    file.close()
+
+
+def end_to_end_delay_stream(data_pd, stream_id):
+    print("===============Stream ({})=============".format(stream_id))
+    data = data_pd.loc[data_pd.fid == stream_id].to_numpy()
+    paquet_his = {}
+    for line in data:
+        t = line[0]
+        code = line[1]
+        pid = line[2]
+        if pid in paquet_his:
+            if code == 3:
+                paquet_his[pid]["end"] = t
+            elif code == 4:
+                del paquet_his[pid]
+        else:
+            paquet_his[pid] = {}
+            paquet_his[pid]["start"] = t
+            paquet_his[pid]["end"] = 0
+
+    file = open("flux_id__{}.csv".format(stream_id), mode="w")
+    count = 0
+    for pid in paquet_his:
+        count += 1
+        file.write("{},{}\n".format(count,paquet_his[pid]["end"]-paquet_his[pid]["start"]))
+        print("pid : %s --- start : %2.8f --- end : %2.8f" % (pid, paquet_his[pid]["start"], paquet_his[pid]["end"]))
+
+    # print(data)
+    return 1
+
+
+end_to_end_delay_stream(my_data, 1)
+end_to_end_delay_stream(my_data, 2)
+end_to_end_delay_stream(my_data, 3)
+end_to_end_delay_stream(my_data, 4)
+end_to_end_delay_stream(my_data, 5)
+end_to_end_delay_stream(my_data, 6)
+end_to_end_delay_stream(my_data, 10)
+end_to_end_delay_stream(my_data, 100)
+end_to_end_delay_stream(my_data, 150)
+end_to_end_delay_stream(my_data, 300)
+end_to_end_delay_stream(my_data, 450)
+end_to_end_delay_stream(my_data, 800)
+end_to_end_delay_stream(my_data, 900)
+end_to_end_delay_stream(my_data, 1000)
+end_to_end_delay_stream(my_data, 1200)
+
+
+# plot_pert_prop(file_name="/home/slahmer/CLionProjects/sidahmedhmar/cmake-build-debug/prop_et_taux_perte.txt")
+
+# flux__(my_data)
+
+# calc_global_data(my_data_nu)
+# cal_node_stats(my_data_nu, "N23")
+# cal_net_stats(my_data_nu, "new_stats", False)
 # W = np.arange(20, 30)
 # Z = Y ** 6.0
 # pg.s([X, Y])
