@@ -2,11 +2,10 @@ import pandas as pd
 import numpy as np
 import os.path
 import time
-import PyGnuplot as pg
+import sys, getopt
 
 import matplotlib.pyplot as plt
 
-data_set_dir_ = "/home/slahmer/PycharmProjects/Network_Data_Analysis/data_set/"
 
 
 def preprocess_data(data_origin, dest_file):
@@ -30,7 +29,6 @@ def init(data_set_dir):
     return data
 
 
-my_data = init(data_set_dir_)
 
 
 # fl = len(my_data.fid.unique())
@@ -220,10 +218,8 @@ def cal_rtt_time(data):
     err.append(segAll_DN * 3)
     print(" [+]-----------> MeanAll : {} \tConfidence Interval 68%  [ {}   ,    {}   ]".
           format(meanAll, segAll - 3 * segAll_DN, segAll + 3 * segAll_DN))
-    # plot_conf_int(bar, err, name)
 
 
-# cal_rtt_time(my_data_nu)
 
 def get_empty_node_info(node):
     nodes_info = {}
@@ -442,34 +438,49 @@ def trafic_mat(data_pd):
         file.write(tmp2)
 
 
-trafic_mat(my_data)
-exit(0)
 
-plot_pert_prop(file_name="/home/slahmer/CLionProjects/sidahmedhmar/cmake-build-debug/passed_by_me.txt")
-end_to_end_delay_stream(my_data, 1)
-end_to_end_delay_stream(my_data, 2)
-end_to_end_delay_stream(my_data, 3)
-end_to_end_delay_stream(my_data, 4)
-end_to_end_delay_stream(my_data, 5)
-end_to_end_delay_stream(my_data, 6)
-end_to_end_delay_stream(my_data, 10)
-end_to_end_delay_stream(my_data, 100)
-end_to_end_delay_stream(my_data, 150)
-end_to_end_delay_stream(my_data, 300)
-end_to_end_delay_stream(my_data, 450)
-end_to_end_delay_stream(my_data, 800)
-end_to_end_delay_stream(my_data, 900)
-end_to_end_delay_stream(my_data, 1000)
-end_to_end_delay_stream(my_data, 1200)
 
-# flux__(my_data)
+def main(argv):
+    inputfile = ""
+    try:
+        opts, args = getopt.getopt(argv, "hi:", ["ifile="])
+    except getopt.GetoptError:
+        print('test.py -i <inputfile>')
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-h':
+            print('test.py -i <inputfile> -o <outputfile>')
+            sys.exit()
+        elif opt in ("-i", "--ifile"):
+            inputfile = arg
+    data_set_dir_ = inputfile
+    print('Input file is "', inputfile)
+    my_data = init(data_set_dir_)
+    fl = len(my_data.fid.unique())
+    print("Flux count : {}".format(fl))
 
-# calc_global_data(my_data_nu)
-# cal_node_stats(my_data_nu, "N23")
-# cal_net_stats(my_data_nu, "new_stats", False)
-# W = np.arange(20, 30)
-# Z = Y ** 6.0
-# pg.s([X, Y])
+    my_data_nu = my_data.to_numpy()
+    calc_global_data(my_data_nu)
+    cal_node_stats(my_data_nu, "N23")
+    cal_net_stats(my_data_nu, "new_stats", False)
+    trafic_mat(my_data)
+    cal_rtt_time(my_data_nu)
+    end_to_end_delay_stream(my_data, 1)
+    end_to_end_delay_stream(my_data, 2)
+    end_to_end_delay_stream(my_data, 3)
+    end_to_end_delay_stream(my_data, 4)
+    end_to_end_delay_stream(my_data, 5)
+    end_to_end_delay_stream(my_data, 6)
+    end_to_end_delay_stream(my_data, 10)
+    end_to_end_delay_stream(my_data, 100)
+    end_to_end_delay_stream(my_data, 150)
+    end_to_end_delay_stream(my_data, 300)
+    end_to_end_delay_stream(my_data, 450)
+    end_to_end_delay_stream(my_data, 800)
+    end_to_end_delay_stream(my_data, 900)
+    end_to_end_delay_stream(my_data, 1000)
+    end_to_end_delay_stream(my_data, 1200)
 
-# pg.c('plot "tmp.dat" using 1:2 w linespoint title "xyz"')
-# pg.c("save 'plot test saving'")
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
