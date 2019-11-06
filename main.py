@@ -126,12 +126,11 @@ def plot_pert_prop(file_name):
     barWidth = 0.2
     tmp = pd.read_csv(file_name)
     x = tmp.NODE.to_numpy()
-    proportion_de_pert = tmp.A.to_numpy() * 100
-    taux_de_perte = tmp.B.to_numpy() * 100
-    plt.bar(x, proportion_de_pert, label='proportion de perte', color='r')
+    passed = tmp.passed.to_numpy()
+    plt.bar(x, passed, label='Number of packets passed by each node', color='c')
     # plt.bar(x,taux_de_perte,  label='taux de perte',color='c')
     plt.xlabel('Node')
-    plt.ylabel('Loss percentage')
+    plt.ylabel('Passed by me')
     # plt.title('Exemple d\' histogramme simple')
     plt.show()
 
@@ -407,13 +406,46 @@ def end_to_end_delay_stream(data_pd, stream_id):
     count = 0
     for pid in paquet_his:
         count += 1
-        file.write("{},{}\n".format(count,paquet_his[pid]["end"]-paquet_his[pid]["start"]))
+        file.write("{},{}\n".format(count, paquet_his[pid]["end"] - paquet_his[pid]["start"]))
         print("pid : %s --- start : %2.8f --- end : %2.8f" % (pid, paquet_his[pid]["start"], paquet_his[pid]["end"]))
 
     # print(data)
     return 1
 
 
+def trafic_mat(data_pd):
+    grp = data_pd.groupby(["fid"])
+    f_list = {}
+    for i in range(1, 27):
+        for j in range(1, 27):
+            f_list["N{}N{}".format(i, j)] = 0
+
+    for name, group in grp:
+        # print(len(group))
+        src = group.s.iloc[0]
+        dst = group.d.iloc[0]
+        tmp1 = "{}{}".format(src, dst)
+        tmp2 = "{}{}".format(dst, src)
+        if tmp1 in f_list:
+            f_list[tmp1] += len(group.pid.unique())
+        elif tmp2 in f_list:
+            f_list[tmp1] += len(group.pid.unique())
+        else:
+            print("Error node not recognized")
+    file = open("trafic.csv", mode="w")
+    for i in range(1, 27):
+        tmp2 = ""
+        for j in range(1, 27):
+            tmp1 = "N{}N{}".format(i, j)
+            tmp2 = tmp2 + "{},".format(f_list[tmp1])
+        tmp2 = tmp2 + "\n"
+        file.write(tmp2)
+
+
+trafic_mat(my_data)
+exit(0)
+
+plot_pert_prop(file_name="/home/slahmer/CLionProjects/sidahmedhmar/cmake-build-debug/passed_by_me.txt")
 end_to_end_delay_stream(my_data, 1)
 end_to_end_delay_stream(my_data, 2)
 end_to_end_delay_stream(my_data, 3)
@@ -429,9 +461,6 @@ end_to_end_delay_stream(my_data, 800)
 end_to_end_delay_stream(my_data, 900)
 end_to_end_delay_stream(my_data, 1000)
 end_to_end_delay_stream(my_data, 1200)
-
-
-# plot_pert_prop(file_name="/home/slahmer/CLionProjects/sidahmedhmar/cmake-build-debug/prop_et_taux_perte.txt")
 
 # flux__(my_data)
 
